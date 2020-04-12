@@ -4,9 +4,14 @@ from urllib.parse import urlencode
 import certifi
 import urllib3
 
+import uploader
+
 default_header = {
     "x-parse-application-id": "unAFkcaNDeXajurGB7LChj8SgQYS2ptm"
 }
+update_file = 'tmp/update2.json'
+object_name = update_file.replace('tmp/','')
+bucket = 'corona-scraper-bucket'
 
 def lambda_handler(event, context):
     try:
@@ -16,21 +21,28 @@ def lambda_handler(event, context):
                 r = http.request('GET', 
                             'https://xx9p7hp1p7.execute-api.us-east-1.amazonaws.com/prod/PortalGeral',
                             headers=default_header)
-                if total.status == 200:
+                if r.status == 200:
                     total = json.loads(r.data.decode('utf-8'))
                     
                     info = {
-                        "updatedAt" : total['results'][0]['dt_atualizacao']
+                        "updatedAt" : f"{total['results'][0]['dt_atualizacao']}"
                     }
                     
                     try:
-                        with open('/tmp/update.json', 'r') as f:
-                            data = json.loads(f.read())
-                        if data["updatedAt"] == r['results'][0]['dt_atualizacao']:
-                            return "Latest data is available"
+                        if uploader.download_file(update_file, bucket, object_name):
+                            with open(update_file, 'r') as f:
+                                data = json.loads(f.read())
+                            if data["updatedAt"] == total['results'][0]['dt_atualizacao']:
+                                raise FileExistsError
+                            else:
+                                raise FileNotFoundError
+                        else: 
+                            raise FileNotFoundError
                     except FileNotFoundError:
-                        with open('/tmp/update.json', 'w') as f:
-                            f.write(json.dumps(info, indent=4))
+                        uploader.upload_file(info, update_file, bucket, object_name)
+                        pass
+                    except FileExistsError:
+                        new_data = "Oi you there, stop!"
                 else:
                     return "Malformed 'total' data"
                 
@@ -39,37 +51,45 @@ def lambda_handler(event, context):
     *Casos confirmados:* {total['results'][0]['total_confirmado']}
     *Óbitos:* {total['results'][0]['total_obitos']}
     *Taxa de letalidade:* {total['results'][0]['total_letalidade']}\n
-Divisão por estados:"""
+*Divisão de casos confirmados por estado:*"""
 
                 r = http.request('GET', 
-                            'https://xx9p7hp1p7.execute-api.us-east-1.amazonaws.com/prod/PortalGeral',
+                            'https://xx9p7hp1p7.execute-api.us-east-1.amazonaws.com/prod/PortalMapa',
                             headers=default_header)
                 
-                if estados.status == 200:
+                if r.status == 200:
                     _estados = json.loads(r.data.decode('utf-8'))
                     estados = {}
-                    for estado in estados['results']:
+                    for estado in _estados['results']:
                         estados.update({
-                            estado['nome']: estado['qtd_confirmado']
+                            f"*{estado['nome']}*": estado['qtd_confirmado']
                         })
+                    del _estados
                     for estado, quantidade in estados.items():
                         payload += '\n\t' + estado + ': ' + str(quantidade)
                 else:
-                    return "Malformed 'estados' data"
+                    return print("Malformed 'estados' data")
 
-                payload += f"""
+                payload += f"""\n\n\
 Atualizado em {total['results'][0]['dt_atualizacao']}
-            _via https://covid.saude.gov.br_"""
+            via [Coronavírus Brasil](https://covid.saude.gov.br)"""
 
-                TOKEN = "TOKEN"
-                chat_id = "CHATID"
+                TOKEN = "866395170:AAGIPgNThi3SvSqAOlHjroPV2bAQyrBSL3I"
+                chat_id = "@brasilcovid19"
                 bot_url = "https://api.telegram.org/bot" + TOKEN + "/sendMessage?"
 
-                data = urlencode({
-                    "chat_id":chat_id,
-                    "text":payload,
-                    "parse_mode":"Markdown"
-                })
+                try:
+                    data = urlencode({
+                        "chat_id":chat_id,
+                        "text":new_data,
+                        "parse_mode":"Markdown"
+                    })
+                except NameError:
+                    data = urlencode({
+                        "chat_id":chat_id,
+                        "text":payload,
+                        "parse_mode":"Markdown"
+                    })
                 
                 bot_url = bot_url + data
                 t = http.request('POST', bot_url)
@@ -89,4 +109,4 @@ Atualizado em {total['results'][0]['dt_atualizacao']}
         }
 
 if __name__ == "__main__":
-    lambda_handler({'scrape': 'true'},'')
+    lambda_handler({'rawQueryString': 'scrape=true'},'')

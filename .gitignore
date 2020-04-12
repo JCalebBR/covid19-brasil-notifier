@@ -139,3 +139,7 @@ certifi/__pycache__/__init__.cpython-37.pyc
 certifi/__pycache__/__main__.cpython-37.pyc
 certifi/__pycache__/core.cpython-37.pyc
 .vscode/settings.json
+workspace.code-workspace
+newpayload.json
+tmp/update.json
+.vscode/launch.json
